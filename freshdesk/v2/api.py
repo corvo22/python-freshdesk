@@ -279,8 +279,11 @@ class TicketAPI(object):
         if verbosity > 2:
             print(
                 f'\tDue by: {ticket.due_by}\n'
-                f'\tDeleted: {ticket.deleted}\n'
                 ,end="")
+            if hasattr(ticket, 'deleted'):
+                print(
+                    f'\tDeleted: {ticket.deleted}\n'
+                    ,end="")
         # always print this lengthy field at the end of the output
         tw.max_lines = 5 if verbosity < 3 else None
         if verbosity > 1:
