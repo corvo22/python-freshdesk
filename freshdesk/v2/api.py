@@ -163,7 +163,15 @@ class TicketAPI(object):
     def update_ticket(self, ticket_id, **kwargs):
         """Updates a ticket from a given ticket ID"""
         url = 'tickets/%d' % ticket_id
+        _ticketcachefile = self.id_to_cache_path(ticket_id)
+        new_ticketcachefile = not _ticketcachefile.exists()
         ticket = self._api._put(url, data=json.dumps(kwargs))['ticket']
+        with open(_ticketcachefile, mode='wb') as f:
+            pickle.dump(ticket,f)
+        if new_ticketcachefile:
+            os.chmod(_ticketcachefile, self._api.cachemode)
+            if self._api.cachegroup:
+                shutil.chown(_ticketcachefile, group=self._api.cachegroup)
         return Ticket(**ticket)
 
     def delete_ticket(self, ticket_id):
