@@ -161,7 +161,7 @@ class TicketAPI(object):
         return Ticket(**ticket)
 
     def update_ticket(self, ticket_id, **kwargs):
-        """Updates a ticket from a given ticket ID"""
+        """Updates a ticket from a given ticket ID, and always updates cache"""
         url = 'tickets/%d' % ticket_id
         _ticketcachefile = self.id_to_cache_path(ticket_id)
         new_ticketcachefile = not _ticketcachefile.exists()
@@ -177,7 +177,10 @@ class TicketAPI(object):
     def delete_ticket(self, ticket_id):
         """Delete the ticket for the given ticket ID"""
         url = 'tickets/%d' % ticket_id
+        _ticketcachefile = self.id_to_cache_path(ticket_id)
         self._api._delete(url)
+        if _ticketcachefile.exists():
+            os.unlink(_ticketcachefile)
 
     def list_tickets(self, max_pages=None, **kwargs):
         """List all tickets, optionally filtered by a view. Specify filters as
