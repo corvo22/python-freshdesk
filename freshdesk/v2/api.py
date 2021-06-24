@@ -658,27 +658,21 @@ class API(object):
             with open(self.apiusagefile, mode='r') as f:
                 (self.ratelimit_remaining, self.ratelimit_total, self.ratelimit_used) = tuple(map(int, f.readlines()))
 
-
     # limit subdirectory entries via binning
-    # {_cachedir}/DD/CC/BB/AA/\d*
-    #   1 maps to {_cachedir}/01/00/00/00/1
-    #   123456789 maps to {_cachedir}/89/67/45/23/123456789
     def ticketid_to_cache_path(self, ticketid):
+        # left zero fill ticketid
         tid=f'{ticketid:08}'
-        p=Path(tid[-2:],tid[-4:-2],tid[-6:-4],tid[:-6])
-        q=Path(self.cachedir, "tickets")
+        p=Path(self.cachedir, "tickets", tid[-6:-3])
         # ensure all ancestor directories exist
-        for x in p.parts:
-            q=Path(q,x)
-            if not q.exists():
-                try:
-                    os.mkdir(q)
-                    os.chmod(q, self.cachedirmode)
-                except:
-                    raise AttributeError(f'Cannot create cache directory {q}')
-                if self.cachegroup:
-                    shutil.chown(q, group=self.cachegroup)
-        return Path(self.cachedir, "tickets", p, str(ticketid))
+        if not p.exists():
+            try:
+                os.mkdir(p)
+                os.chmod(p, self.cachedirmode)
+            except:
+                raise AttributeError(f'Cannot create cache directory {p}')
+            if self.cachegroup:
+                shutil.chown(p, group=self.cachegroup)
+        return Path(p, str(ticketid))
 
 
     def _action(self, req, url):
