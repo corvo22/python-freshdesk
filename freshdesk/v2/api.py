@@ -53,26 +53,9 @@ class TicketAPI(object):
     def priority_id_to_name(self, id):
         return ticket_priorties[id]
 
-    def id_to_cache_path(self, id):
-        tid=f'{id:08}'
-        # max 100 subdirectories at any level
-        p=Path(tid[-2:],tid[-4:-2],tid[-6:-4],tid[:-6])
-        q=Path(self._cachedir)
-        for x in p.parts:
-            q=Path(q,x)
-            if not q.exists():
-                try:
-                    os.mkdir(q)
-                    os.chmod(q, self._api.cachedirmode)
-                except:
-                    raise AttributeError(f'Cannot create cache directory {q}')
-                if self._api.cachegroup:
-                    shutil.chown(q, group=self._api.cachegroup)
-        return Path(self._cachedir, p, str(id))
-
     def get_ticket(self, ticket_id, include=None):
         """Fetches the ticket for the given ticket ID"""
-        _ticketcachefile = self.id_to_cache_path(ticket_id)
+        _ticketcachefile = self._api.ticketid_to_cache_path(ticket_id)
         new_ticketcachefile = not _ticketcachefile.exists()
         if new_ticketcachefile or any(x in ['tickets','all'] for x in self._api.updatecache):
             url = 'tickets/%d' % ticket_id
@@ -163,7 +146,7 @@ class TicketAPI(object):
     def update_ticket(self, ticket_id, **kwargs):
         """Updates a ticket from a given ticket ID, and always updates cache"""
         url = 'tickets/%d' % ticket_id
-        _ticketcachefile = self.id_to_cache_path(ticket_id)
+        _ticketcachefile = self._api.ticketid_to_cache_path(ticket_id)
         new_ticketcachefile = not _ticketcachefile.exists()
         ticket = self._api._put(url, data=json.dumps(kwargs))['ticket']
         with open(_ticketcachefile, mode='wb') as f:
@@ -177,7 +160,7 @@ class TicketAPI(object):
     def delete_ticket(self, ticket_id):
         """Delete the ticket for the given ticket ID"""
         url = 'tickets/%d' % ticket_id
-        _ticketcachefile = self.id_to_cache_path(ticket_id)
+        _ticketcachefile = self._api.ticketid_to_cache_path(ticket_id)
         self._api._delete(url)
         if _ticketcachefile.exists():
             os.unlink(_ticketcachefile)
@@ -225,7 +208,7 @@ class TicketAPI(object):
         # TODO: if self._api.updatecache is false, pull all from cache (need
         #   to locally implement filters / views)
         for ticket in tickets:
-            _ticketcachefile = self.id_to_cache_path(ticket['id'])
+            _ticketcachefile = self._api.ticketid_to_cache_path(ticket['id'])
             new_ticketcachefile = not _ticketcachefile.exists()
             with open(_ticketcachefile, mode='wb') as f:
                 pickle.dump(ticket,f)
@@ -306,23 +289,56 @@ class ConversationAPI(object):
         self._api = api
 
     def list_conversations(self, ticket_id):
+        """lists all conversations private and public"""
         url = 'tickets/%d/conversations' % ticket_id
         conversations = []
+        conversation_cache_suffixes=['.replies','.notes']
         for c in self._api._get(url)['conversations']:
-            conversations.append(Conversation(**c))
+            conversation=Conversation(**c)
+            conversations.append(conversation)
+            _conversationcachefile = self._api.ticketid_to_cache_path(ticket_id).with_suffix(conversation_cache_suffixes[conversation.private])
+            new_conversationcachefile = not _conversationcachefile.exists()
+            if new_conversationcachefile or any(x in ['tickets','all'] for x in self._api.updatecache):
+                with open(_conversationcachefile, mode='wb') as f:
+                    pickle.dump(conversation,f)
+                if new_conversationcachefile:
+                    os.chmod(_conversationcachefile, self._api.cachemode)
+                    if self._api.cachegroup:
+                        shutil.chown(_conversationcachefile, group=self._api.cachegroup)
         return conversations
 
     def create_note(self, ticket_id, body, **kwargs):
+        """creates private note, and always updates cache"""
         url = 'tickets/%d/notes' % ticket_id
         data = {'body': body}
         data.update(kwargs)
-        return Conversation(**self._api._post(url, data=json.dumps(data))['conversation'])
+        conversation = Conversation(**self._api._post(url, data=json.dumps(data))['conversation'])
+        _conversationcachefile = self._api.ticketid_to_cache_path(ticket_id) + ".notes"
+        new_conversationcachefile = not _conversationcachefile.exists()
+        with open(_conversationcachefile, mode='wb') as f:
+            pickle.dump(conversation,f)
+        if new_conversationcachefile:
+            os.chmod(_conversationcachefile, self._api.cachemode)
+            if self._api.cachegroup:
+                shutil.chown(_conversationcachefile, group=self._api.cachegroup)
+        return conversation
+
 
     def create_reply(self, ticket_id, body, **kwargs):
+        """creates public note, and always updates cache"""
         url = 'tickets/%d/reply' % ticket_id
         data = {'body': body}
         data.update(kwargs)
-        return Conversation(**self._api._post(url, data=json.dumps(data))['conversation'])
+        conversation = Conversation(**self._api._post(url, data=json.dumps(data))['conversation'])
+        _conversationcachefile = self._api.ticketid_to_cache_path(ticket_id) + ".replies"
+        new_conversationcachefile = not _conversationcachefile.exists()
+        with open(_conversationcachefile, mode='wb') as f:
+            pickle.dump(conversation,f)
+        if new_conversationcachefile:
+            os.chmod(_conversationcachefile, self._api.cachemode)
+            if self._api.cachegroup:
+                shutil.chown(_conversationcachefile, group=self._api.cachegroup)
+        return conversation
 
 
 class GroupAPI(object):
@@ -641,6 +657,28 @@ class API(object):
         else:
             with open(self.apiusagefile, mode='r') as f:
                 (self.ratelimit_remaining, self.ratelimit_total, self.ratelimit_used) = tuple(map(int, f.readlines()))
+
+
+    # limit subdirectory entries via binning
+    # {_cachedir}/DD/CC/BB/AA/\d*
+    #   1 maps to {_cachedir}/01/00/00/00/1
+    #   123456789 maps to {_cachedir}/89/67/45/23/123456789
+    def ticketid_to_cache_path(self, ticketid):
+        tid=f'{ticketid:08}'
+        p=Path(tid[-2:],tid[-4:-2],tid[-6:-4],tid[:-6])
+        q=Path(self.cachedir, "tickets")
+        # ensure all ancestor directories exist
+        for x in p.parts:
+            q=Path(q,x)
+            if not q.exists():
+                try:
+                    os.mkdir(q)
+                    os.chmod(q, self.cachedirmode)
+                except:
+                    raise AttributeError(f'Cannot create cache directory {q}')
+                if self.cachegroup:
+                    shutil.chown(q, group=self.cachegroup)
+        return Path(self.cachedir, "tickets", p, str(ticketid))
 
 
     def _action(self, req, url):
