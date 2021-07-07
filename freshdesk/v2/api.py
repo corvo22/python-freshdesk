@@ -313,7 +313,7 @@ class ConversationAPI(object):
         data = {'body': body}
         data.update(kwargs)
         conversation = Conversation(**self._api._post(url, data=json.dumps(data))['conversation'])
-        _conversationcachefile = self._api.ticketid_to_cache_path(ticket_id) + ".notes"
+        _conversationcachefile = self._api.ticketid_to_cache_path(ticket_id).with_suffix(".notes")
         new_conversationcachefile = not _conversationcachefile.exists()
         with open(_conversationcachefile, mode='wb') as f:
             pickle.dump(conversation,f)
@@ -330,7 +330,7 @@ class ConversationAPI(object):
         data = {'body': body}
         data.update(kwargs)
         conversation = Conversation(**self._api._post(url, data=json.dumps(data))['conversation'])
-        _conversationcachefile = self._api.ticketid_to_cache_path(ticket_id) + ".replies"
+        _conversationcachefile = self._api.ticketid_to_cache_path(ticket_id).with_suffix(".replies")
         new_conversationcachefile = not _conversationcachefile.exists()
         with open(_conversationcachefile, mode='wb') as f:
             pickle.dump(conversation,f)
