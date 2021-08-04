@@ -4,6 +4,8 @@ import requests
 from requests import HTTPError
 
 import os
+import re
+import time
 import stat
 import shutil
 from pathlib import Path
@@ -21,6 +23,8 @@ from datetime import datetime, timedelta
 from textwrap import TextWrapper
 
 tw = TextWrapper(width=80,initial_indent=12*' ',subsequent_indent=12*' ')
+
+ratelimit_timer_re=re.compile(r"429 Rate Limit Exceeded: API rate-limit has been reached until (\d+)")
 
 class TicketAPI(object):
     def __init__(self, api):
@@ -288,12 +292,30 @@ class ConversationAPI(object):
     def __init__(self, api):
         self._api = api
 
-    def list_conversations(self, ticket_id):
+    def list_conversations(self, ticket_id, **kwargs):
         """lists all conversations private and public"""
         url = 'tickets/%d/conversations' % ticket_id
-        conversations = []
+        page = 1 if not 'page' in kwargs else kwargs['page']
+        per_page = 100 if not 'per_page' in kwargs else kwargs['per_page']
         conversation_cache_suffixes=['.replies','.notes']
-        for c in self._api._get(url)['conversations']:
+
+        conversation_pages = []
+        while True:
+            try:
+                this_page = self._api._get(url + 'page=%d&per_page=%d'
+                               % (page, per_page))['conversations']
+            except FreshserviceRateLimited as err:
+                ratelimit_timer_val=ratelimit_timer_re.match(err.args[0]).group(1)
+                print(f'list_conversations() got to page {page}, hit rate limit, waiting {ratelimit_timer_val} seconds...')
+                time.sleep(int(ratelimit_timer_val) + 1)
+                continue
+
+            conversation_pages += this_page
+            if len(this_page) < per_page or 'page' in kwargs:
+                break
+            page += 1
+
+        for c in conversation_pages:
             conversation=Conversation(**c)
             conversations.append(conversation)
             _conversationcachefile = self._api.ticketid_to_cache_path(ticket_id).with_suffix(conversation_cache_suffixes[conversation.private])
@@ -367,8 +389,15 @@ class GroupAPI(object):
 
         groups = []
         while True:
-            this_page = self._api._get(url + 'page=%d&per_page=%d'
-                                       % (page, per_page), kwargs)['groups']
+            try:
+                this_page = self._api._get(url + 'page=%d&per_page=%d'
+                                           % (page, per_page), kwargs)['groups']
+            except FreshserviceRateLimited as err:
+                ratelimit_timer_val=ratelimit_timer_re.match(err.args[0]).group(1)
+                print(f'list_groups() got to page {page}, hit rate limit, waiting {ratelimit_timer_val} seconds...')
+                time.sleep(int(ratelimit_timer_val) + 1)
+                continue
+
             groups += this_page
             if len(this_page) < per_page or 'page' in kwargs:
                 break
@@ -468,8 +497,15 @@ class AgentAPI(object):
         # Skip pagination by looping over each page and adding tickets if 'page' key is not in kwargs.
         # else return the requested page and break the loop
         while True:
-            this_page = self._api._get(url + 'page=%d&per_page=%d'
-                                       % (page, per_page), kwargs)['agents']
+            try:
+                this_page = self._api._get(url + 'page=%d&per_page=%d'
+                                           % (page, per_page), kwargs)['agents']
+            except FreshserviceRateLimited as err:
+                ratelimit_timer_val=ratelimit_timer_re.match(err.args[0]).group(1)
+                print(f'list_agents() got to page {page}, hit rate limit, waiting {ratelimit_timer_val} seconds...')
+                time.sleep(int(ratelimit_timer_val) + 1)
+                continue
+
             agents += this_page
             if len(this_page) < per_page or 'page' in kwargs:
                 break
@@ -553,8 +589,15 @@ class RequesterAPI(object):
         # Skip pagination by looping over each page and adding tickets if 'page' key is not in kwargs.
         # else return the requested page and break the loop
         while True:
-            this_page = self._api._get(url + 'page=%d&per_page=%d'
-                                       % (page, per_page), kwargs)['requesters']
+            try:
+                this_page = self._api._get(url + 'page=%d&per_page=%d'
+                                           % (page, per_page), kwargs)['requesters']
+            except FreshserviceRateLimited as err:
+                ratelimit_timer_val=ratelimit_timer_re.match(err.args[0]).group(1)
+                print(f'list_requesters() got to page {page}, hit rate limit, waiting {ratelimit_timer_val} seconds...')
+                time.sleep(int(ratelimit_timer_val) + 1)
+                continue
+
             requesters += this_page
             if len(this_page) < per_page or 'page' in kwargs:
                 break
