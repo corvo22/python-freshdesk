@@ -294,11 +294,12 @@ class ConversationAPI(object):
 
     def list_conversations(self, ticket_id, **kwargs):
         """lists all conversations private and public"""
-        url = 'tickets/%d/conversations' % ticket_id
+        url = 'tickets/%d/conversations?' % ticket_id
         page = 1 if not 'page' in kwargs else kwargs['page']
         per_page = 100 if not 'per_page' in kwargs else kwargs['per_page']
         conversation_cache_suffixes=['.replies','.notes']
 
+        conversations = []
         conversation_pages = []
         while True:
             try:
