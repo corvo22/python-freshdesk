@@ -442,7 +442,7 @@ class TicketFieldAPI(object):
         self._api = api
 
     def list_ticket_fields(self, **kwargs):
-        url = 'ticket_fields'
+        url = 'ticket_form_fields'
         ticket_fields = []
 
         if 'type' in kwargs:
